@@ -1,0 +1,349 @@
+<html lang="en">
+
+<head>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://d3js.org/topojson.v3.min.js"></script>
+<style>
+.chart svg {
+           background-color: #f9f9f9;
+           border: 1px solid #ccc;
+       }
+ .dot {
+     /* stroke: #000; */
+ }
+ .tooltip {
+     position: absolute;
+     text-align: center;
+     width: 200px;
+     height: auto;
+     padding: 2px;
+     font: 12px sans-serif;
+     background: lightsteelblue;
+     border: 0px;
+     border-radius: 8px;
+     pointer-events: none;
+     opacity: 0;
+     transition: opacity 0.3s;
+ }
+</style>
+</head>
+<body>
+  <select id="stateDropdown">
+    <option value="all">Select a State</option>
+    <!-- State options will be populated here -->
+  </select>
+  <div class="chart"></div>
+
+  <div class="chart"></div>
+
+<script>
+
+const w = 900;
+const h = 600;
+const padding = 150;
+
+let datasets;
+
+async function requestData() {
+
+  const fileNames = ['labor-stats/101.csv', 'labor-stats/1011.csv', 'labor-stats/1012.csv', 'labor-stats/1013.csv'
+                    , 'labor-stats/102.csv', 'labor-stats/1021.csv', 'labor-stats/1022.csv', 'labor-stats/1023.csv'
+                    , 'labor-stats/1024.csv', 'labor-stats/1025.csv', 'labor-stats/1026.csv'];
+  const industries = ['Goods-producing', 'Natural Resources and Mining', 'Construction', 'Manufacutring'
+                    , 'Service-Providing', 'Trade, transportation, and utilities', 'Information', 'Financial Activities',
+                    'Professional and Business Service', 'Education and Healthcare Service', 'Leisure and Hospitality'];
+
+      const datasets = await Promise.all(fileNames.map((file, index) => d3.csv(file).then(data => ({
+          industry: industries[index],
+          data: data.filter(d => d.average_wages_per_employee) // Exclude undefined, null, or empty
+          .map(d => ({
+              state: d.state,
+              employment: Number(d.average_wages_per_employee.replace(/,/g, '')),
+              num_employment: d.annual_average_employee
+          }))
+          // data: data.map(d => ({
+          //     state: d.state,
+          //      employment: Number(d.average_wages_per_employee.replace(/,/g, ''))
+          //     // employment: d.average_wages_per_employee ? Number(d.average_wages_per_employee.replace(/,/g, '')) : 0
+          //     // employment: Number(d.average_wages_per_employee.replace(/,/g, '')) // Ensure employment is a number
+          // }))
+      }))));
+
+      const mergedData = [];
+            datasets.forEach(dataset => {
+                dataset.data.forEach(d => {
+                    mergedData.push({
+                        industry: dataset.industry,
+                        state: d.state,
+                        employment: d.employment,
+                        num_employment: d.num_employment
+                    });
+                });
+            });
+
+            // After datasets are merged and ready
+      const uniqueStates = [...new Set(mergedData.map(d => d.state))].sort();
+      populateDropdown(uniqueStates);
+      console.log(mergedData)
+      initializeDropdown(datasets);
+
+      renderChart(mergedData)
+
+
+
+}
+  requestData();
+
+  function renderChart(dataset) {
+    // Create scales
+    var xScale = d3.scaleLinear()
+                   .domain([0, d3.max(dataset, d => d.employment)])
+                   .range([padding, w - padding]);
+
+    var yScale = d3.scaleBand()
+                   .domain(dataset.map(d => d.industry))
+                   .range([h - padding, padding])
+                   .paddingInner(0.05);
+
+
+    // Create SVG element
+    var svg = d3.select(".chart")
+                .append("svg")
+                .attr("width", w)
+                .attr("height", h);
+
+
+    var tooltip = d3.select("body").append("div")
+                    .attr("class", "tooltip")
+                    .style("opacity", 0);
+
+
+    // Create dots
+    svg.selectAll("circle")
+      .data(dataset)
+      .enter()
+      .append("circle")
+      .attr("class", "dot")
+      .attr("cx", d => xScale(d.employment))
+      .attr("cy", d => yScale(d.industry) + yScale.bandwidth() / 2)
+      .attr("opacity", 0.3)
+      .attr("fill", "#03e8fc")
+      .attr("r", 5)
+      // .on("click", function(event, d) {
+      //   if (d3.select(this).attr("stroke") === "black") {
+      // // Circle already clicked, remove the black stroke
+      //             d3.select(this)
+      //               .attr("stroke", "none") // Set stroke back to none
+      //               .attr("stroke-width", 0); // Remove the stroke width
+      //
+      //             // Optionally hide the tooltip or update its content
+      //             tooltip.transition()
+      //                    .duration(200)
+      //                    .style("opacity", 0); // Hide the tooltip
+      //         } else {
+      //             // Circle not yet clicked, add the black stroke
+      //             d3.select(this)
+      //               .attr("stroke", "black")
+      //               .attr("stroke-width", 2);
+      //
+      //             // Update the tooltip content and position, then make it visible
+      //             tooltip.html("State: " + d.state + "<br/>Average Wages: " + d3.format(",")(d.employment))
+      //                    .style("left", (event.pageX + 10) + "px")
+      //                    .style("top", (event.pageY - 28) + "px")
+      //                    .transition()
+      //                    .duration(200)
+      //                    .style("opacity", .9); // Show the tooltip
+      //         }
+       // });
+       .on("mouseover", function(event, d) {
+       // Add a black stroke to the hovered circle
+       d3.select(this)
+         .attr("stroke", "black")
+         .attr("stroke-width", 2);
+
+       // Optionally, show tooltip or additional info
+       tooltip.html("State: " + d.state + "<br/>Average Wages: " + d3.format(",")(d.employment))
+              .style("left", (event.pageX + 10) + "px")
+              .style("top", (event.pageY - 28) + "px")
+              .transition()
+              .duration(200)
+              .style("opacity", 1); // Show the tooltip
+   })
+        .on("mouseout", function() {
+             // Remove the black stroke when the mouse leaves the circle
+             d3.select(this)
+               .attr("stroke", "none")
+               .attr("stroke-width", 0);
+
+             // Optionally, hide tooltip or additional info
+             tooltip.transition()
+                    .duration(200)
+                    .style("opacity", 0); // Hide the tooltip
+         });
+
+
+    // Create X axis
+    svg.append("g")
+       .attr("transform", "translate(0," + (h - padding) + ")")
+       .call(d3.axisBottom(xScale));
+
+    // Create Y axis
+    svg.append("g")
+       .attr("transform", "translate(" + padding + ",0)")
+       .call(d3.axisLeft(yScale));
+}
+
+function populateDropdown(states) {
+    const dropdown = d3.select("#stateDropdown");
+
+    // Populate dropdown with state options
+    states.forEach(state => {
+        dropdown.append("option")
+                .text(state)
+                .attr("value", state);
+    });
+
+    // Event listener for when a selection changes
+    dropdown.on("change", function(event) {
+        const selectedState = event.target.value;
+        highlightStateCircles(selectedState);
+    });
+}
+
+function initializeDropdown(dataset) {
+    console.log(dataset)
+    const states = Array.from(new Set(dataset.map(d => d.state))).sort();
+    const dropdown = d3.select('#stateDropdown');
+    states.forEach(state => {
+        dropdown.append('option')
+                .text(state)
+                .attr('value', state);
+    });
+}
+
+
+function highlightStateCircles(selectedState) {
+    // Reset any previously applied outlines
+    d3.selectAll("circle")
+      .attr("stroke", "none")
+      .attr("stroke-width", 0);
+
+    // If a specific state is selected, highlight those circles
+    if (selectedState !== "all") {
+        d3.selectAll("circle")
+          .filter(d => d.state === selectedState)
+          .attr("stroke", "black")
+          .attr("stroke-width", 2);
+    }
+
+
+}
+
+// Assume 'dataset' is your detailed dataset including 'state' and 'annual_average_employee'
+document.getElementById('stateDropdown').addEventListener('change', function() {
+    const selectedState = this.value;
+    if (selectedState === 'all') {
+        // Optionally, handle the 'all' or default state
+        return;
+    }
+
+    // Filter the dataset for the selected state
+    console.log(datasets)
+    const stateData = datasets.filter(x => x.state === selectedState);
+
+    // Further processing to aggregate data, get top 5 industries, etc.
+    const aggregatedData = d3.rollups(stateData, v => d3.sum(v, d => +d.annual_average_employee), d => d.industry)
+                             .map(([industry, employment]) => ({ industry, employment }))
+                             .sort((a, b) => b.employment - a.employment)
+                             .slice(0, 5);
+
+    drawLineChart(aggregatedData, selectedState); // Draw or update the line chart
+});
+
+// document.getElementById('stateDropdown').addEventListener('change', function() {
+//     const selectedState = this.value;
+//     if (selectedState === 'all') {
+//         // Optionally clear the line chart or handle 'Select a State' option
+//         return;
+//     }
+//
+//     const stateData = mergedData.filter(d => d.state === selectedState);
+//     const aggregatedData = d3.rollups(stateData, v => d3.sum(v, d => +d.annual_average_employee), d => d.industry)
+//                              .map(([industry, employment]) => ({ industry, employment }))
+//                              .sort((a, b) => b.employment - a.employment)
+//                              .slice(0, 5);
+//
+//     drawLineChart(aggregatedData, selectedState);
+// });
+
+function drawLineChart(data, stateName) {
+    // Define dimensions and margins for the line chart
+    const margin = {top: 20, right: 30, bottom: 30, left: 60},
+          width = 460 - margin.left - margin.right,
+          height = 400 - margin.top - margin.bottom;
+
+    // Select an existing SVG or create a new one for the line chart
+    let svg = d3.select("#lineChartSvg");
+    if (svg.empty()) {
+        svg = d3.select("body").append("svg")
+            .attr("id", "lineChartSvg")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+          .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+    } else {
+        svg.selectAll("*").remove(); // Clear previous chart
+    }
+
+    // Assuming 'data' is correctly formatted for the top 5 industries in the clicked state
+
+    // Create scales
+    // Note: You'll need to adapt the domain settings based on your actual data structure
+    const x = d3.scaleTime().range([0, width]);
+    const y = d3.scaleLinear().range([height, 0]);
+
+    // Define the line generator
+    const line = d3.line()
+                   .x(function(d) { return x(d.time); }) // Replace 'd.time' with your actual time data property
+                   .y(function(d) { return y(d.employment); });
+
+    // Add the lines for each industry
+    data.forEach(industryData => {
+        svg.append("path")
+            .data([industryData.values]) // Assuming each industryData item has a 'values' array with the time series data
+            .attr("fill", "none")
+            .attr("stroke", "steelblue")
+            .attr("stroke-width", 1.5)
+            .attr("d", line);
+    });
+
+    // Add axes
+    // Note: You'll need to set the domains for x and y based on your data
+    svg.append("g")
+       .attr("transform", `translate(0,${height})`)
+       .call(d3.axisBottom(x));
+
+    svg.append("g")
+       .call(d3.axisLeft(y));
+
+    // Add a title or additional information as needed
+    svg.append("text")
+       .attr("x", (width / 2))
+       .attr("y", 0 - (margin.top / 2))
+       .attr("text-anchor", "middle")
+       .style("font-size", "16px")
+       .style("text-decoration", "underline")
+       .text(`Top 5 Industries in ${stateName}`);
+}
+
+
+
+
+
+
+
+</script>
+
+
+</body>
+</html>

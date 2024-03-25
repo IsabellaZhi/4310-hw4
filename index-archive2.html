@@ -1,0 +1,485 @@
+<html lang="en">
+
+<head>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://d3js.org/topojson.v3.min.js"></script>
+<style>
+    #firstchart {
+           background-color: #f9f9f9;
+           border: 1px solid #ccc;
+           display: flex;
+           justify-content: center;
+       }
+    .dot {
+     /* stroke: #000; */
+    }
+    .tooltip {
+        position: absolute;
+        text-align: center;
+        width: 200px;
+        height: auto;
+        padding: 2px;
+        font: 13px sans-serif;
+        background: lightsteelblue;
+        border: 0px;
+        border-radius: 8px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+</style>
+</head>
+<body>
+  <select id="stateDropdown">
+    <option value="all">Select a State</option>
+    <!-- State options will be populated here -->
+  </select>
+  <div id="firstchart"></div>
+  <div id="secondchart"></div>
+
+<script>
+
+const w = 2000;
+const h = 800;
+const padding = 300;
+
+async function requestData() {
+
+    const occu = await d3.csv("occupation2.csv");
+    console.log(occu)
+    const fileNames = ['labor-stats/101.csv', 'labor-stats/1011.csv', 'labor-stats/1012.csv', 'labor-stats/1013.csv'
+                    , 'labor-stats/102.csv', 'labor-stats/1021.csv', 'labor-stats/1022.csv', 'labor-stats/1023.csv'
+                    , 'labor-stats/1024.csv', 'labor-stats/1025.csv', 'labor-stats/1026.csv'];
+    const industries = ['Goods-producing', 'Natural Resources and Mining', 'Construction', 'Manufacutring'
+                    , 'Service-Providing', 'Trade, transportation, and utilities', 'Information', 'Financial Activities',
+                    'Professional and Business Service', 'Education and Healthcare Service', 'Leisure and Hospitality'];
+
+    const datasets = await Promise.all(fileNames.map((file, index) => d3.csv(file).then(data => ({
+        industry: industries[index],
+        data: data.filter(d => d.average_wages_per_employee) // Exclude undefined, null, or empty
+        .map(d => ({
+            state: d.state,
+            wage: Number(d.average_wages_per_employee.replace(/,/g, ''))
+        }))
+          // data: data.map(d => ({
+          //     state: d.state,
+          //      employment: Number(d.average_wages_per_employee.replace(/,/g, ''))
+          //     // employment: d.average_wages_per_employee ? Number(d.average_wages_per_employee.replace(/,/g, '')) : 0
+          //     // employment: Number(d.average_wages_per_employee.replace(/,/g, '')) // Ensure employment is a number
+          // }))
+      }))));
+
+      let mergedData = [];
+            datasets.forEach(dataset => {
+                dataset.data.forEach(d => {
+                    mergedData.push({
+                        industry: dataset.industry,
+                        state: d.state,
+                        wage: d.wage
+                    });
+                });
+            });
+
+
+            // After datasets are merged and ready
+      const uniqueStates = [...new Set(mergedData.map(d => d.state))].sort();
+      populateDropdown(uniqueStates);
+      console.log(mergedData)
+
+      renderChart(mergedData)
+
+
+
+  function renderChart(dataset) {
+    // Create scales
+    var xScale = d3.scaleLinear()
+                    .domain([0, d3.max(dataset, d => d.wage)])
+                    .range([padding, w - padding-400]);
+
+    var yScale = d3.scaleBand()
+                   .domain(dataset.map(d => d.industry))
+                   .range([h - padding -200 , 0])
+                   .paddingInner(0.05);
+
+
+    // Create SVG
+    var svgContainer = d3.select("#firstchart").append("div")
+                .style("width", "100%")
+                .style("height", "100%")
+                .style("display", "flex")
+                .style("justify-content", "center");
+
+    var svg = svgContainer.append("svg")
+        .attr("width", "100%") // Adjust the viewport size to be smaller or as needed
+        .attr("height", 500)
+        // Use viewBox to specify the "miniature coordinate system"
+        // The format is "min-x min-y width height"
+        // Keep the width and height here the same as your original SVG dimensions to maintain the scale
+        //.attr("viewBox", "0 0 2000 800")
+        // Optionally, add preserveAspectRatio to control how the viewBox is scaled
+        //.attr("preserveAspectRatio", "xMidYMid meet");
+
+    var tooltip = d3.select("body").append("div")
+                    .attr("class", "tooltip")
+                    .style("opacity", 0);
+
+
+    // Create dots
+    svg.selectAll("circle")
+        .data(dataset)
+        .enter()
+        .append("circle")
+        .attr("class", "dot")
+        .attr("cx", d => xScale(d.wage))
+        .attr("cy", d => yScale(d.industry) + yScale.bandwidth() / 2)
+        .attr("transform", "translate(0,70)")
+        .attr("opacity", 0.3)
+        .attr("fill", "blue")
+        .attr("r", 6)
+        .attr("stroke", "white")
+        .attr("stroke-width", 1)
+        .on("mouseover", function(event, d) {
+        // Add a black stroke to the hovered circle
+        d3.select(this)
+            .attr("stroke", "black")
+            .attr("stroke-width", 2);
+
+       // Optionally, show tooltip or additional info
+        tooltip.html("State: " + d.state + "<br/>Average Wages: " + d3.format(",")(d.wage))
+              .style("left", (event.pageX + 10) + "px")
+              .style("top", (event.pageY - 28) + "px")
+              .transition()
+              .duration(200)
+              .style("opacity", 1); // Show the tooltip
+   })
+        .on("mouseout", function() {
+             // Remove the black stroke when the mouse leaves the circle
+             d3.select(this)
+               .attr("stroke", "white")
+               .attr("stroke-width", 1);
+
+             // Optionally, hide tooltip or additional info
+             tooltip.transition()
+                    .duration(200)
+                    .style("opacity", 0); // Hide the tooltip
+        });
+
+
+    // Create X axis
+    svg.append("g")
+       .attr("transform", "translate(0," + (h - padding - 120) + ")")
+       .call(d3.axisBottom(xScale));
+
+    // Create Y axis
+    svg.append("g")
+       .attr("transform", "translate(" + padding + ",70)")
+       .call(d3.axisLeft(yScale));
+}
+
+function populateDropdown(states) {
+    const dropdown = d3.select("#stateDropdown");
+
+    // Populate dropdown with state options
+    states.forEach(state => {
+        dropdown.append("option")
+                .text(state)
+                .attr("value", state);
+    });
+
+    // Event listener for when a selection changes
+    dropdown.on("change", function(event) {
+        const selectedState = event.target.value;
+        highlightStateCircles(selectedState);
+        updateOccupationChart(selectedState);
+    });
+}
+
+function highlightStateCircles(selectedState) {
+    // Reset any previously applied outlines
+    d3.selectAll("circle")
+      .attr("stroke", "white")
+      .attr("stroke-width", 1);
+
+    // If a specific state is selected, highlight those circles
+    if (selectedState !== "all") {
+        d3.selectAll("circle")
+          .filter(d => d.state === selectedState)
+          .attr("stroke", "black")
+          .attr("stroke-width", 2);
+    }
+}
+
+    // Second Graph
+    const margin = { top: 60, right: 20, bottom: 60, left: 100 };
+    const width = window.innerWidth * 0.6 - margin.left - margin.right; // 试试60
+    height = 300 - margin.top - margin.bottom;
+
+    var svg2 = d3.select("#secondchart")
+                .append("svg")
+                .attr("width", window.innerWidth)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    function updateOccupationChart(selectedState){
+        svg2.selectAll("*").remove();
+        let filteredData = mergedData.filter(d => d.state == selectedState);
+
+        let industryAggregates = {};
+        filteredData.forEach(d => {
+            if (!industryAggregates[d.industry]) {
+                industryAggregates[d.industry] = { totalWage: 0, count: 0 };
+            }
+            industryAggregates[d.industry].totalWage += d.wage;
+            industryAggregates[d.industry].count += 1;
+        });
+
+        let averages = Object.keys(industryAggregates).map(key => ({
+            industry: key,
+            averageWage: industryAggregates[key].totalWage / industryAggregates[key].count
+        }));
+        averages.sort((a, b) => b.averageWage - a.averageWage);
+        let topFiveIndustries = averages.slice(0, 5);
+
+        let prefixMap = {};
+        topFiveIndustries.forEach(ind => {
+            let matchingData = occu.find(d => d.OCC_TITLE === ind.industry); //定5
+            if(matchingData) {
+                let prefix = matchingData.OCC_CODE.substring(0, 2);
+                prefixMap[prefix] = ind.industry; //create
+            }
+        });
+
+        // 选code/occupations
+        let occCodePrefixes = topFiveIndustries.map(ind => {
+            let matchingData = occu.find(d => d.OCC_TITLE === ind.industry);
+            return matchingData?.OCC_CODE?.substring(0, 2) ?? null;
+        }).filter(prefix => prefix !== null);
+        console.log("occCodePrefixes,", occCodePrefixes)
+
+        const changedData = occu.filter(d =>
+            occCodePrefixes.some(prefix => d.OCC_CODE.startsWith(prefix))
+        );
+
+        // x2
+        let x2 = d3.scaleBand()
+            .rangeRound([0, width])
+            .padding(0.05)
+            .domain(occCodePrefixes);
+        svg2.append("g")
+            .attr("class", "x-axis")
+            .attr("transform", "translate(0," + height + ")")
+            .call(d3.axisBottom(x2).tickFormat(d => prefixMap[d] || d));
+
+        // y2
+        let y2 = d3.scaleLinear()
+            .rangeRound([height, 0])
+            .domain([
+                d3.min(changedData, d => +d.A_MEAN.replace(/[^0-9.-]+/g,"")), //->boundary, [^]-> match those not here
+                d3.max(changedData, d => +d.A_MEAN.replace(/[^0-9.-]+/g,""))
+            ]);
+        svg2.append("g")
+            .attr("class", "y-axis")
+            .call(d3.axisLeft(y2))
+
+        var tooltip2 = d3.select("body").append("div")
+                        .attr("class", "tooltip")
+                        .style("opacity", 0);
+
+        // Scatter Plot
+        const dotData = occu.filter(d =>
+            (d.AREA_TITLE === selectedState) &&
+            occCodePrefixes.some(prefix => d.OCC_CODE.startsWith(prefix)) &&
+            +d.A_MEAN.replace(/[^0-9.-]+/g,"") > 0
+            );
+
+        console.log(dotData)
+
+        svg2.selectAll(".vdot")
+            .data(dotData)
+            .enter().append("circle")
+            .attr("class", "vdot")
+
+            .attr("cx", d => {
+                const currentPrefix = d.OCC_CODE.substring(0, 2);
+                const baseX = x2(currentPrefix) + x2.bandwidth() / 2;
+                const jitter = (Math.random() - 0.5) * x2.bandwidth() * 0.3; // 0.3 jitter再调
+                return baseX + jitter;
+            })
+            .attr("cy", d => y2(+d.A_MEAN.replace(/[^0-9.-]+/g,"")))
+            .attr("r", 3.5)
+            .style("fill", "#69b3a2")
+            .attr("stroke", "white")
+            .attr("stroke-width", 1)
+            .on("mouseover", function(event, d) {
+            // Add a black stroke to the hovered circle
+            d3.select(this)
+                .attr("stroke", "black")
+                .attr("stroke-width", 2);
+
+           // Optionally, show tooltip or additional info
+            tooltip2.html("Occupation: " + d.OCC_TITLE + "<br/>Average Wages: " + d.A_MEAN + "<br/>State: " + d.AREA_TITLE)
+                  .style("left", (event.pageX + 10) + "px")
+                  .style("top", (event.pageY - 28) + "px")
+                  .transition()
+                  .duration(200)
+                  .style("opacity", 1); // Show the tooltip
+       })
+            .on("mouseout", function() {
+                 // Remove the black stroke when the mouse leaves the circle
+                 d3.select(this)
+                   .attr("stroke", "white")
+                   .attr("stroke-width", 1);
+
+                 // Optionally, hide tooltip or additional info
+                 tooltip2.transition()
+                        .duration(200)
+                        .style("opacity", 0); // Hide the tooltip
+            });
+
+        // THIRD
+        function kernelDensityEstimator(kernel, X) {
+            return function(V) {
+                return X.map((x) => [x, d3.mean(V, (v) => kernel(x - v))]);
+            };
+        }
+
+        function kernelEpanechnikov(k) {
+            return (v) => Math.abs(v /= k) <= 1 ? 0.75 * (1 - v * v) / k : 0;
+        }
+
+        const groupedData = d3.group(dotData, d => d.OCC_CODE.substring(0, 2));
+
+
+        averages.forEach((industry) => {
+            let industryPrefix = Object.keys(prefixMap).find(prefix => prefixMap[prefix] === industry.industry);
+
+            // console.log(occu)
+            // const relevantData = occu.filter(item => {
+            //     // Check if the OCC_CODE starts with the industryPrefix (similar to dotData's filtering)
+            //     const startsWithPrefix = occCodePrefixes.some(prefix => item.OCC_CODE.startsWith(prefix));
+            //     // Check if the AREA_TITLE matches the selectedState
+            //     const isInSelectedState = item.AREA_TITLE === selectedState;
+            //     // Check if A_MEAN is greater than 0 after removing non-numeric characters
+            //     const isMeanSalaryPositive = +item.A_MEAN.replace(/[^0-9.-]+/g,"") > 0;
+            //
+            //     // Combine conditions
+            //     return startsWithPrefix && isInSelectedState && isMeanSalaryPositive;
+            // });
+
+
+            // console.log(relevantData)
+            // Extracting salary values for the violin chart
+
+            // const values = dotData.map(item => +item.A_MEAN.replace(/,/g, ''));
+
+            const values = dotData
+
+
+            // const values = occu.map(item => {
+            //     const meanSalary = Number(item.A_MEAN.replace(/,/g, ''));
+            //     return meanSalary;
+            // }).filter(value => !isNaN(value)); // Ensure only numeric values are included
+
+            console.log(values)
+
+            if(values.length === 0) {
+                console.error("No valid data found for prefix", industry.industry);
+                return;
+            }
+
+
+            // const groupedData = d3.group(relevantData, d => d.industry);
+            //
+            //
+            //
+            //
+            //
+            // /////////// debug
+            // console.log("Processing industry:", industry.industry, "with prefix", industryPrefix);
+            // console.log("Filtered values count:", values.length);
+            //
+            // let kde = kernelDensityEstimator(kernelEpanechnikov(20), y2.ticks(40))(values);
+            // console.log(industry.industry, "KDE Output:", kde.map(d => `(${d[0]}, ${d[1]})`).join(", "));
+            // console.log("values,", values)
+            // /////////// debug
+            //
+            // let industryKDEs = new Map();
+            //
+            //   groupedData.forEach((values, industry) => {
+            //       let numericalValues = values.map(d => +d.A_MEAN.replace(/[^0-9.-]+/g,""));
+            //       let kdeDomain = d3.range(d3.min(numericalValues), d3.max(numericalValues), (d3.max(numericalValues) - d3.min(numericalValues)) / 40);
+            //       let kde = kernelDensityEstimator(kernelEpanechnikov(20), kdeDomain)(numericalValues);
+            //       industryKDEs.set(industry, kde);
+            //   });
+            //
+            //   const xScale = d3.scaleBand()
+            //     .domain(Array.from(industryKDEs.keys()))
+            //     .range([0, width])
+            //     .padding(0.05);
+            //
+            // const yScale = d3.scaleLinear()
+            //     .domain([d3.min(relevantData, d => +d.A_MEAN.replace(/[^0-9.-]+/g,"")), d3.max(relevantData, d => +d.A_MEAN.replace(/[^0-9.-]+/g,""))])
+            //     .range([height, 0]);
+            //
+            // industryKDEs.forEach((kde, industry) => {
+            //     // let kdeScale = d3.scaleLinear()
+            //     //     .domain([0, d3.max(kde, d => d[1])])
+            //         // .range([0, xScale.bandwidth() / 2]);
+            //
+            //     let kdeScale = d3.scaleLinear()
+            //         .range([0, x2.bandwidth()/2])
+            //         .domain([0, d3.max(kde, d => d[1] ?? 0)]); //d3.max(kde, d => d[1])
+            //
+            //     svg2.append("path")
+            //         .datum(kde)
+            //         .attr("class", "violin")
+            //         .attr("d", d3.area()
+            //             .x0(d => -kdeScale(d[1]))
+            //             .x1(d => kdeScale(d[1]))
+            //             .y(d => yScale(d[0]))
+            //             .curve(d3.curveCatmullRom))
+            //         .attr("transform", `translate(${xScale(industry) + xScale.bandwidth() / 2},0)`)
+            //         .style("fill", "#69b3a2")
+            //         .style("opacity", 0.6);
+            // });
+            //
+
+
+
+
+    let valueRange = d3.range(d3.min(values), d3.max(values), (d3.max(values) - d3.min(values)) / 40);
+
+    // Calculate KDE
+        let kde = kernelDensityEstimator(kernelEpanechnikov(20), valueRange)(values);
+      let kdeScale = d3.scaleLinear()
+                .range([0, x2.bandwidth()/2])
+                .domain([0, d3.max(kde, d => d[1] ?? 0)]); //d3.max(kde, d => d[1])
+
+            let kdeMaxDensity = d3.max(kde, d => d[1]);
+            kdeScale.domain([0, kdeMaxDensity]);
+
+
+
+            svg2.append("path")
+                .datum(kde)
+                .attr("class", "violin")
+                .attr("d", d3.area()
+                    .x0(d => x2(industryPrefix) + x2.bandwidth() / 2 - kdeScale(d[1]))
+                    .x1(d => x2(industryPrefix) + x2.bandwidth() / 2 + kdeScale(d[1]))
+                    .y(d => y2(d[0]))
+                    .curve(d3.curveCatmullRom))
+                .style("fill", "#69b3a2")
+                .style("opacity", 0.6);
+        });
+
+
+    }
+
+}
+  requestData();
+</script>
+
+
+</body>
+</html>
